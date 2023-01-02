@@ -56,3 +56,6 @@ main
 
 # VS Code
 .vscode
+
+# gprof
+profile

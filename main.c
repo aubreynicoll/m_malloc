@@ -8,26 +8,45 @@
 
 #include "m_malloc.h"
 
-#define BUFSIZE 128
+#define BUFSIZE 1
 #define MAX_REQUEST_SIZE 4096
-#define MAX_REQUESTS 10000
+#define MAX_REQUESTS 25
 
+/**
+ * Shorthand for struct job
+ */
 typedef struct job Job;
+
+/**
+ * A driver job. Represents a driver-allocated block of memory, its size, and a
+ * hash of its bytes.
+ */
 struct job {
 	void	     *p;
 	size_t	      size;
 	unsigned long hash;
 };
 
+/**
+ * Get a random number.
+ *
+ * \return an unsigned integer up to, but not including, limit
+ */
 unsigned m_rand(unsigned limit) {
 	return limit * (rand() / (RAND_MAX + 1.0));
 }
 
+/**
+ * Fill an array with random bytes.
+ */
 void fill(unsigned char *p, size_t size) {
 	unsigned char *end = p + size;
 	while (p != end) *p++ = m_rand(256);
 }
 
+/**
+ * Generate a hash from an array of bytes.
+ */
 unsigned long hash(unsigned char *p, size_t size) {
 	unsigned long  h = 1;
 	unsigned char *end = p + size;
@@ -37,15 +56,25 @@ unsigned long hash(unsigned char *p, size_t size) {
 	return h;
 }
 
+/**
+ * Initialize a Job. It is important to use this function, as it fills the
+ * allocated memory and then computes a hash that is later used as a checksum.
+ */
 void initialize_job(Job *job, void *p, size_t size) {
 	fill(p, size);
 	*job = (Job){.p = p, .size = size, .hash = hash(p, size)};
 }
 
+/**
+ * Clear a Job of its contents. Does not free the allocated memory.
+ */
 void clear_job(Job *job) {
 	*job = (Job){.p = NULL, .size = 0, .hash = 0};
 }
 
+/**
+ * Print a Job.
+ */
 void print_job(Job *job) {
 	printf(
 	    "{.p = %p, .size = %zu, .hash = %lx}\n", job->p, job->size,
@@ -53,11 +82,15 @@ void print_job(Job *job) {
 	);
 }
 
+/**
+ * Check the integrity of a Job's data. Returns 1 if the data is good, else 0.
+ */
 int check_hash(Job *job) {
 	return job->hash == hash(job->p, job->size);
 }
 
 int main(void) {
+	setbuf(stdout, NULL); /* prevent printf from calling malloc */
 	srand(time(NULL));
 
 	Job jobs[BUFSIZE] = {NULL};

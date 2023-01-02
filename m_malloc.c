@@ -1,5 +1,5 @@
 /**
- * v0.0.1 - first attempt at writing a general purpose heap allocator
+ * v0.2.0 - general purpose memory allocator
  *
  * Main principles:
  * - handles arbitrary request sequences
@@ -38,6 +38,8 @@
 
 #define GET_ALIGNED_SIZE(size) \
 	((HEADER_SIZE + (size) + ALIGNMENT_MASK) & ~ALIGNMENT_MASK)
+
+#define GET_ALIGNED_HEADER(size) (GET_ALIGNED_SIZE(size) - HEADER_SIZE)
 
 #define ALLOC_FLAG 0x1
 
@@ -123,7 +125,7 @@ void *m_malloc(size_t size) {
 				// Must round up to HEADER_OFFSET, so that
 				// payload falls on ALIGNMENT
 				uintptr_t addr = (uintptr_t)new_block;
-				addr = GET_ALIGNED_SIZE(addr) - HEADER_SIZE;
+				addr = GET_ALIGNED_HEADER(addr);
 				new_block = (Header *)addr;
 
 				// Cannot use ALIGNMENT bytes, because rounding
