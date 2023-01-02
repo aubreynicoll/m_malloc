@@ -22,12 +22,40 @@
 
 #include <libc.h>
 
-/* print debug info */
+#if (CHECK_HEAP)
+#define fail_if(exp, ...)                             \
+	{                                             \
+		if (exp) {                            \
+			fprintf(stderr, __VA_ARGS__); \
+			fprintf(stderr, "\n");        \
+			exit(1);                      \
+		}                                     \
+	}
+#else
+//
+#define fail_if(exp, ...)
+#endif /* CHECK_HEAP */
+
 #if (PRINT_DEBUG_INFO)
 #define print_debug_info(...) printf(__VA_ARGS__)
+
+#define print_free_list()                                                     \
+	{                                                                     \
+		print_debug_info("freelist:\n");                              \
+		for (Header *curr = head.nextp; curr != &head;                \
+		     curr = curr->nextp) {                                    \
+			print_debug_info(                                     \
+			    "%p: size %zu, alloc %d, ", curr, get_size(curr), \
+			    is_alloc(curr)                                    \
+			);                                                    \
+		}                                                             \
+		print_debug_info("\n");                                       \
+	}
+
 #else
 #define print_debug_info(...)
-#endif
+#define print_free_list()
+#endif /* PRINT_DEBUG_INFO */
 
 /* most restrictive alignment */
 #define ALIGNMENT _Alignof(max_align_t)
@@ -86,12 +114,7 @@ static void *extend_heap(size_t incr);
 static void  internal_free(Header *header);
 
 #if (CHECK_HEAP)
-static void fatal_error(char *msg);
-static int  is_alloc(Header *header);
-#endif
-
-#if (PRINT_DEBUG_INFO)
-static void print_free_list();
+static int is_alloc(Header *header);
 #endif
 
 /* function definitions */
@@ -111,13 +134,10 @@ void *m_malloc(size_t size) {
 
 	for (Header *prev_block = &head, *curr_block = get_nextp(&head);;
 	     prev_block = curr_block, curr_block = get_nextp(curr_block)) {
-#if (CHECK_HEAP)
-		if (is_alloc(curr_block)) {
-			fatal_error(
-			    "m_malloc: found allocated block in freelist"
-			);
-		}
-#endif
+		fail_if(
+		    is_alloc(curr_block),
+		    "m_malloc: found allocated block in freelist"
+		);
 
 		if (curr_block == &head) {
 			// get more memory
@@ -148,9 +168,7 @@ void *m_malloc(size_t size) {
 			set_alloc(curr_block, 1);
 
 			print_debug_info("allocated %p\n", curr_block);
-#if (CHECK_HEAP)
 			print_free_list();
-#endif
 
 			void *payload_ptr = get_payload_ptr(curr_block);
 
@@ -193,9 +211,7 @@ void m_free(void *ptr) {
 
 	// TODO will need to acquire mutex here
 	internal_free(ptr - HEADER_SIZE);
-#if (CHECK_HEAP)
 	print_free_list();
-#endif
 }
 
 static size_t get_size(Header *header) {
@@ -203,13 +219,10 @@ static size_t get_size(Header *header) {
 }
 
 static void set_size(Header *header, size_t size) {
-#if (CHECK_HEAP)
-	if (size & ALIGNMENT_MASK) {
-		fatal_error(
-		    "set_size: size was not multiple of alignment requirement"
-		);
-	}
-#endif
+	fail_if(
+	    size & ALIGNMENT_MASK,
+	    "set_size: size was not multiple of alignment requirement"
+	);
 
 	header->data = size;
 }
@@ -225,43 +238,32 @@ static void set_alloc(Header *header, int true) {
 }
 
 static Header *get_nextp(Header *header) {
-#if (CHECK_HEAP)
-	if (is_alloc(header)) {
-		fatal_error(
-		    "get_nextp: attempted to get nextp from allocated block"
-		);
-	}
-#endif
+	fail_if(
+	    is_alloc(header),
+	    "get_nextp: attempted to get nextp from allocated block"
+	);
 
 	return header->nextp;
 }
 
 static void set_nextp(Header *header, Header *nextp) {
-#if (CHECK_HEAP)
-	if (is_alloc(header)) {
-		fatal_error(
-		    "set_nextp: attempted to set nextp in allocated block"
-		);
-	}
-#endif
+	fail_if(
+	    is_alloc(header),
+	    "set_nextp: attempted to set nextp in allocated block"
+	);
 
 	header->nextp = nextp;
 }
 
 static void *get_payload_ptr(Header *header) {
-#if (CHECK_HEAP)
-	if (!is_alloc(header)) {
-		fatal_error(
-		    "get_payload_ptr: attempted to get payload pointer from a free block"
-		);
-	}
-
-	if ((uintptr_t)&header->nextp & ALIGNMENT_MASK) {
-		fatal_error(
-		    "get_payload_ptr: usable payload not aligned properly"
-		);
-	}
-#endif
+	fail_if(
+	    !is_alloc(header),
+	    "get_payload_ptr: attempted to get payload pointer from a free block"
+	);
+	fail_if(
+	    (uintptr_t)&header->nextp & ALIGNMENT_MASK,
+	    "get_payload_ptr: usable payload not aligned properly"
+	);
 
 	return &header->nextp;
 }
@@ -279,27 +281,7 @@ static void internal_free(Header *header) {
 }
 
 #if (CHECK_HEAP)
-static void fatal_error(char *msg) {
-	fprintf(stderr, "%s\n", msg);
-	exit(EXIT_FAILURE);
-}
-
 static int is_alloc(Header *header) {
 	return header->data & ALLOC_FLAG;
-}
-#endif
-
-#if (PRINT_DEBUG_INFO)
-static void print_free_list() {
-	if (!initialized) return;
-
-	print_debug_info("freelist:\n");
-	for (Header *curr = head.nextp; curr != &head; curr = curr->nextp) {
-		print_debug_info(
-		    "%p: size %zu, alloc %d, ", curr, get_size(curr),
-		    is_alloc(curr)
-		);
-	}
-	print_debug_info("\n");
 }
 #endif
