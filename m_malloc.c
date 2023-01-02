@@ -86,9 +86,12 @@ static void *extend_heap(size_t incr);
 static void  internal_free(Header *header);
 
 #if (CHECK_HEAP)
-static void print_free_list();
 static void fatal_error(char *msg);
 static int  is_alloc(Header *header);
+#endif
+
+#if (PRINT_DEBUG_INFO)
+static void print_free_list();
 #endif
 
 /* function definitions */
@@ -276,6 +279,17 @@ static void internal_free(Header *header) {
 }
 
 #if (CHECK_HEAP)
+static void fatal_error(char *msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(EXIT_FAILURE);
+}
+
+static int is_alloc(Header *header) {
+	return header->data & ALLOC_FLAG;
+}
+#endif
+
+#if (PRINT_DEBUG_INFO)
 static void print_free_list() {
 	if (!initialized) return;
 
@@ -287,14 +301,5 @@ static void print_free_list() {
 		);
 	}
 	print_debug_info("\n");
-}
-
-static void fatal_error(char *msg) {
-	fprintf(stderr, "%s\n", msg);
-	exit(EXIT_FAILURE);
-}
-
-static int is_alloc(Header *header) {
-	return header->data & ALLOC_FLAG;
 }
 #endif
