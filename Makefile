@@ -5,6 +5,13 @@ CFLAGS := -I$(HOME)/local/include -Wall -Wextra
 LDFLAGS := -L$(HOME)/local/lib
 LDLIBS :=
 
+
+ifeq ($(ENABLE_PROFILING), 1)
+	CFLAGS := $(CFLAGS) -pg
+	LDFLAGS := $(LDFLAGS) -pg
+endif
+
+
 ifeq ($(BUILD_PROFILE), release)
 	CFLAGS := $(CFLAGS) -Werror -O3
 else
@@ -12,10 +19,6 @@ else
 	LDFLAGS := $(LDFLAGS)
 endif
 
-ifeq ($(ENABLE_PROFILING), 1)
-	CFLAGS := $(CFLAGS) -pg
-	LDFLAGS := $(LDFLAGS) -pg
-endif
 
 $(P): $(OBJECTS)
 

@@ -31,9 +31,20 @@
 			exit(1);                      \
 		}                                     \
 	}
+
+#define check_heap()                                                         \
+	{                                                                    \
+		for (Header *curr = head.nextp; curr != &head;               \
+		     curr = curr->nextp) {                                   \
+			fail_if(                                             \
+			    is_alloc(curr),                                  \
+			    "check_heap: found allocated block in free list" \
+			);                                                   \
+		}                                                            \
+	}
 #else
-//
 #define fail_if(exp, ...)
+#define check_heap()
 #endif /* CHECK_HEAP */
 
 #if (PRINT_DEBUG_INFO)
@@ -134,11 +145,6 @@ void *m_malloc(size_t size) {
 
 	for (Header *prev_block = &head, *curr_block = get_nextp(&head);;
 	     prev_block = curr_block, curr_block = get_nextp(curr_block)) {
-		fail_if(
-		    is_alloc(curr_block),
-		    "m_malloc: found allocated block in freelist"
-		);
-
 		if (curr_block == &head) {
 			// get more memory
 			Header *new_block = extend_heap(size + ALIGNMENT);
@@ -211,7 +217,9 @@ void m_free(void *ptr) {
 
 	// TODO will need to acquire mutex here
 	internal_free(ptr - HEADER_SIZE);
+
 	print_free_list();
+	check_heap();
 }
 
 static size_t get_size(Header *header) {
