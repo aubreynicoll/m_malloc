@@ -73,7 +73,7 @@
 #define ALIGNMENT _Alignof(max_align_t)
 #define ALIGNMENT_MASK (ALIGNMENT - 1)
 
-#define HEADER_SIZE sizeof(size_t)
+#define HEADER_SIZE offsetof(Header, nextp)
 #define HEADER_OFFSET (ALIGNMENT - HEADER_SIZE)
 
 #define GET_ALIGNED_SIZE(size) \
