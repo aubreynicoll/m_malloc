@@ -1,5 +1,5 @@
 /**
- * v0.2.0 - general purpose memory allocator
+ * General purpose memory allocator
  *
  * Main principles:
  * - handles arbitrary request sequences
@@ -32,15 +32,14 @@
 		}                                     \
 	}
 
-#define check_heap()                                                         \
-	{                                                                    \
-		for (Header *curr = head.nextp; curr != &head;               \
-		     curr = curr->nextp) {                                   \
-			fail_if(                                             \
-			    is_alloc(curr),                                  \
-			    "check_heap: found allocated block in free list" \
-			);                                                   \
-		}                                                            \
+#define check_heap()                                                           \
+	{                                                                      \
+		for (Header *curr = head.nextp; curr != &head;                 \
+		     curr = curr->nextp) {                                     \
+			fail_if(                                               \
+			    is_alloc(curr),                                    \
+			    "check_heap: found allocated block in free list"); \
+		}                                                              \
 	}
 #else
 #define fail_if(exp, ...)
@@ -50,17 +49,15 @@
 #if (PRINT_DEBUG_INFO)
 #define print_debug_info(...) printf(__VA_ARGS__)
 
-#define print_free_list()                                                     \
-	{                                                                     \
-		print_debug_info("freelist:\n");                              \
-		for (Header *curr = head.nextp; curr != &head;                \
-		     curr = curr->nextp) {                                    \
-			print_debug_info(                                     \
-			    "%p: size %zu, alloc %d, ", curr, get_size(curr), \
-			    is_alloc(curr)                                    \
-			);                                                    \
-		}                                                             \
-		print_debug_info("\n");                                       \
+#define print_free_list()                                                  \
+	{                                                                  \
+		print_debug_info("freelist:\n");                           \
+		for (Header *curr = head.nextp; curr != &head;             \
+		     curr = curr->nextp) {                                 \
+			print_debug_info("%p: size %zu, alloc %d, ", curr, \
+					 get_size(curr), is_alloc(curr));  \
+		}                                                          \
+		print_debug_info("\n");                                    \
 	}
 
 #else
@@ -109,6 +106,11 @@ struct header {
 	Header *nextp; /* only used when free */
 };
 
+/* global data */
+#if (CHECK_HEAP)
+size_t heap_size = 0;
+#endif
+
 /* static data */
 static Header	head; /* empty cyclical linked list */
 static unsigned initialized;
@@ -133,7 +135,9 @@ void *m_malloc(size_t size) {
 	print_debug_info("called m_malloc! ");
 	print_debug_info("requested size: %zu, ", size);
 
-	if (size == 0) return NULL;
+	if (size == 0) {
+		return NULL;
+	}
 
 	if (!initialized) {
 		head.nextp = &head;
@@ -148,7 +152,9 @@ void *m_malloc(size_t size) {
 		if (curr_block == &head) {
 			// get more memory
 			Header *new_block = extend_heap(size + ALIGNMENT);
-			if (new_block == NULL) return NULL;
+			if (new_block == NULL) {
+				return NULL;
+			}
 
 			if ((uintptr_t)new_block % ALIGNMENT != HEADER_OFFSET) {
 				// Must round up to HEADER_OFFSET, so that
@@ -185,10 +191,14 @@ void *m_malloc(size_t size) {
 
 void *m_calloc(size_t nmemb, size_t size) {
 	size_t total_size = nmemb * size;
-	if (nmemb && total_size / nmemb != size) return NULL;
+	if (nmemb && total_size / nmemb != size) {
+		return NULL;
+	}
 
 	void *p = m_malloc(total_size);
-	if (p == NULL) return NULL;
+	if (p == NULL) {
+		return NULL;
+	}
 
 	memset(p, 0, total_size);
 	return p;
@@ -197,12 +207,16 @@ void *m_calloc(size_t nmemb, size_t size) {
 void *m_realloc(void *ptr, size_t size) {
 	print_debug_info("***begin realloc***\n");
 
-	if (ptr == NULL) return m_malloc(size);
+	if (ptr == NULL) {
+		return m_malloc(size);
+	}
 
 	size_t prev_size = get_size(ptr - HEADER_SIZE);
 	void *new = m_malloc(size);
 
-	if (new == NULL) return NULL;
+	if (new == NULL) {
+		return NULL;
+	}
 
 	memcpy(new, ptr, prev_size < size ? prev_size : size);
 	m_free(ptr);
@@ -227,10 +241,8 @@ static size_t get_size(Header *header) {
 }
 
 static void set_size(Header *header, size_t size) {
-	fail_if(
-	    size & ALIGNMENT_MASK,
-	    "set_size: size was not multiple of alignment requirement"
-	);
+	fail_if(size & ALIGNMENT_MASK,
+		"set_size: size was not multiple of alignment requirement");
 
 	header->data = size;
 }
@@ -246,19 +258,15 @@ static void set_alloc(Header *header, int true) {
 }
 
 static Header *get_nextp(Header *header) {
-	fail_if(
-	    is_alloc(header),
-	    "get_nextp: attempted to get nextp from allocated block"
-	);
+	fail_if(is_alloc(header),
+		"get_nextp: attempted to get nextp from allocated block");
 
 	return header->nextp;
 }
 
 static void set_nextp(Header *header, Header *nextp) {
-	fail_if(
-	    is_alloc(header),
-	    "set_nextp: attempted to set nextp in allocated block"
-	);
+	fail_if(is_alloc(header),
+		"set_nextp: attempted to set nextp in allocated block");
 
 	header->nextp = nextp;
 }
@@ -266,19 +274,23 @@ static void set_nextp(Header *header, Header *nextp) {
 static void *get_payload_ptr(Header *header) {
 	fail_if(
 	    !is_alloc(header),
-	    "get_payload_ptr: attempted to get payload pointer from a free block"
-	);
-	fail_if(
-	    (uintptr_t)&header->nextp & ALIGNMENT_MASK,
-	    "get_payload_ptr: usable payload not aligned properly"
-	);
+	    "get_payload_ptr: attempted to get payload pointer from a free block");
+	fail_if((uintptr_t)&header->nextp & ALIGNMENT_MASK,
+		"get_payload_ptr: usable payload not aligned properly");
 
 	return &header->nextp;
 }
 
 static void *extend_heap(size_t incr) {
 	void *old_brk = sbrk(incr);
-	if (old_brk == (void *)-1) return NULL;
+	if (old_brk == (void *)-1) {
+		return NULL;
+	}
+
+#if (CHECK_HEAP)
+	heap_size += incr;
+#endif
+
 	return old_brk;
 }
 
