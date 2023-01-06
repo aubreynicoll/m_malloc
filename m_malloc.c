@@ -128,6 +128,9 @@ static void    set_nextp(Header *header, Header *nextp);
 static void   *get_payload_ptr(Header *header);
 
 static void *extend_heap(size_t incr);
+static void *internal_malloc(size_t size);
+static void *internal_calloc(size_t nmemb, size_t size);
+static void *internal_realloc(void *ptr, size_t size);
 static void  internal_free(Header *header);
 
 #if (CHECK_HEAP)
@@ -139,95 +142,18 @@ void *m_malloc(size_t size) {
 	print_debug_info("called m_malloc! ");
 	print_debug_info("requested size: %zu, ", size);
 
-	if (size == 0) {
-		return NULL;
-	}
-
-	if (!initialized) {
-		head.nextp = &head;
-		initialized = 1;
-	}
-
-	size = GET_ALIGNED_SIZE(size);
-	print_debug_info("aligned size: %zu\n", size);
-
-	for (Header *prev_block = &head, *curr_block = get_nextp(&head);;
-	     prev_block = curr_block, curr_block = get_nextp(curr_block)) {
-		if (curr_block == &head) {
-			// get more memory
-			Header *new_block = extend_heap(size + ALIGNMENT);
-			if (new_block == NULL) {
-				return NULL;
-			}
-
-			if ((uintptr_t)new_block % ALIGNMENT != HEADER_OFFSET) {
-				// Must round up to HEADER_OFFSET, so that
-				// payload falls on ALIGNMENT
-				uintptr_t addr = (uintptr_t)new_block;
-				addr = GET_ALIGNED_HEADER(addr);
-				new_block = (Header *)addr;
-
-				// Cannot use ALIGNMENT bytes, because rounding
-				set_size(new_block, size);
-			} else {
-				// Include ALIGNMENT bytes in size
-				set_size(new_block, size + ALIGNMENT);
-			}
-
-			internal_free(new_block);
-
-			continue;
-		}
-
-		if (get_size(curr_block) >= size) {
-			set_nextp(prev_block, get_nextp(curr_block));
-			set_alloc(curr_block, 1);
-
-			print_debug_info("allocated %p\n", curr_block);
-			print_free_list();
-
-			void *payload_ptr = get_payload_ptr(curr_block);
-
-			return payload_ptr;
-		}
-	}
+	void *payload = internal_malloc(size);
+	return payload;
 }
 
 void *m_calloc(size_t nmemb, size_t size) {
-	size_t total_size = nmemb * size;
-	if (nmemb && total_size / nmemb != size) {
-		return NULL;
-	}
-
-	void *p = m_malloc(total_size);
-	if (p == NULL) {
-		return NULL;
-	}
-
-	memset(p, 0, total_size);
-	return p;
+	void *payload = internal_calloc(nmemb, size);
+	return payload;
 }
 
 void *m_realloc(void *ptr, size_t size) {
-	print_debug_info("***begin realloc***\n");
-
-	if (ptr == NULL) {
-		return m_malloc(size);
-	}
-
-	size_t prev_size = get_size(ptr - HEADER_SIZE);
-	void *new = m_malloc(size);
-
-	if (new == NULL) {
-		return NULL;
-	}
-
-	memcpy(new, ptr, prev_size < size ? prev_size : size);
-	m_free(ptr);
-
-	print_debug_info("***end realloc***\n");
-
-	return new;
+	void *payload = internal_realloc(ptr, size);
+	return payload;
 }
 
 void m_free(void *ptr) {
@@ -286,6 +212,8 @@ static void *get_payload_ptr(Header *header) {
 }
 
 static void *extend_heap(size_t incr) {
+	print_debug_info("extending heap by %zu\n", incr);
+
 	void *old_brk = sbrk(incr);
 	if (old_brk == (void *)-1) {
 		return NULL;
@@ -296,6 +224,98 @@ static void *extend_heap(size_t incr) {
 #endif
 
 	return old_brk;
+}
+
+static void *internal_malloc(size_t size) {
+	if (size == 0) {
+		return NULL;
+	}
+
+	if (!initialized) {
+		head.nextp = &head;
+		initialized = 1;
+	}
+
+	size = GET_ALIGNED_SIZE(size);
+	print_debug_info("size rounded up to %zu\n", size);
+
+	for (Header *prev_block = &head, *curr_block = get_nextp(&head);;
+	     prev_block = curr_block, curr_block = get_nextp(curr_block)) {
+		if (curr_block == &head) {
+			// get more memory
+			Header *new_block = extend_heap(size + ALIGNMENT);
+			if (new_block == NULL) {
+				return NULL;
+			}
+
+			if ((uintptr_t)new_block % ALIGNMENT != HEADER_OFFSET) {
+				// Must round up to HEADER_OFFSET, so that
+				// payload falls on ALIGNMENT
+				uintptr_t addr = (uintptr_t)new_block;
+				addr = GET_ALIGNED_HEADER(addr);
+				new_block = (Header *)addr;
+
+				// Cannot use ALIGNMENT bytes, because rounding
+				set_size(new_block, size);
+			} else {
+				// Include ALIGNMENT bytes in size
+				set_size(new_block, size + ALIGNMENT);
+			}
+
+			internal_free(new_block);
+
+			continue;
+		}
+
+		if (get_size(curr_block) >= size) {
+			set_nextp(prev_block, get_nextp(curr_block));
+			set_alloc(curr_block, 1);
+
+			print_debug_info("allocated %p\n", curr_block);
+			print_free_list();
+
+			void *payload_ptr = get_payload_ptr(curr_block);
+
+			return payload_ptr;
+		}
+	}
+}
+
+static void *internal_calloc(size_t nmemb, size_t size) {
+	size_t total_size = nmemb * size;
+	if (nmemb && total_size / nmemb != size) {
+		return NULL;
+	}
+
+	void *p = internal_malloc(total_size);
+	if (p == NULL) {
+		return NULL;
+	}
+
+	memset(p, 0, total_size);
+	return p;
+}
+
+static void *internal_realloc(void *ptr, size_t size) {
+	print_debug_info("***begin realloc***\n");
+
+	if (ptr == NULL) {
+		return internal_malloc(size);
+	}
+
+	size_t prev_size = get_size(ptr - HEADER_SIZE);
+	void *new = internal_malloc(size);
+
+	if (new == NULL) {
+		return NULL;
+	}
+
+	memcpy(new, ptr, prev_size < size ? prev_size : size);
+	internal_free(ptr - HEADER_SIZE);
+
+	print_debug_info("***end realloc***\n");
+
+	return new;
 }
 
 static void internal_free(Header *header) {

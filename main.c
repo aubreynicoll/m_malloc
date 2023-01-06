@@ -10,9 +10,9 @@
 #include "m_malloc.h"
 
 #define BUFSIZE 10
-#define MAX_REQUEST_SIZE 4096
+#define MAX_REQUEST_SIZE 8
 #define MAX_REQUESTS 10000
-#define REALLOC_CHANCE 1
+#define REALLOC_CHANCE 50
 
 /**
  * A driver job. Represents a driver-allocated block of memory, its size, and a
