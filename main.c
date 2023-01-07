@@ -10,9 +10,18 @@
 #include "m_malloc.h"
 
 #define BUFSIZE 10
-#define MAX_REQUEST_SIZE 8
+#define MAX_REQUEST_SIZE 64000
 #define MAX_REQUESTS 10000
-#define REALLOC_CHANCE 50
+#define REALLOC_CHANCE 10
+
+/**
+ * Driver options
+ */
+typedef struct options Options;
+struct options {
+	int test_libc_malloc;
+	int verbose;
+};
 
 /**
  * A driver job. Represents a driver-allocated block of memory, its size, and a
@@ -24,6 +33,26 @@ struct job {
 	size_t	      size;
 	unsigned long hash;
 };
+
+/**
+ * Function pointer type for malloc
+ */
+typedef void *(*malloc_t)(size_t);
+
+/**
+ * Function pointer type for calloc
+ */
+typedef void *(*calloc_t)(size_t, size_t);
+
+/**
+ * Function pointer type for realloc
+ */
+typedef void *(*realloc_t)(void *, size_t);
+
+/**
+ * Function pointer type for free
+ */
+typedef void (*free_t)(void *);
 
 /**
  * Get a random number.
@@ -89,19 +118,77 @@ int check_hash(Job *job) {
 	return job->hash == hash(job->p, job->size);
 }
 
-int main(void) {
+/**
+ * Get current position of brk
+ */
+uintptr_t getbrk(void) {
+	void *brk = sbrk(0);
+	if (brk == (void *)-1) {
+		perror("sbrk");
+		exit(EXIT_FAILURE);
+	}
+
+	return (uintptr_t)brk;
+}
+
+/**
+ * initialize cli args to defaults
+ */
+Options *initialize_options(Options *options) {
+	*options = (Options){.test_libc_malloc = 0, .verbose = 0};
+	return options;
+}
+
+/**
+ * Parse cli args
+ */
+void parse_options(Options *options, int argc, char *argv[]) {
+	int opt;
+	while ((opt = getopt(argc, argv, "gv")) != -1) {
+		switch (opt) {
+			case 'g':
+				options->test_libc_malloc = 1;
+				break;
+			case 'v':
+				options->verbose = 1;
+				break;
+			default:
+				fprintf(stderr, "accepted flags: -g -v");
+				exit(EXIT_FAILURE);
+		}
+	}
+}
+
+int main(int argc, char *argv[]) {
 	setbuf(stdout, NULL); /* prevent printf from calling malloc */
 	srand(time(NULL));
+
+	/* check flags */
+	Options config;
+	parse_options(initialize_options(&config), argc, argv);
+
+	/* assign function pointers */
+	malloc_t  mallocp;
+	realloc_t reallocp;
+	free_t	  freep;
+	if (config.test_libc_malloc) {
+		mallocp = malloc;
+		reallocp = realloc;
+		freep = free;
+	} else {
+		mallocp = m_malloc;
+		reallocp = m_realloc;
+		freep = m_free;
+	}
 
 	Job jobs[BUFSIZE] = {NULL};
 
 	unsigned malloc_count = 0;
 	unsigned free_count = 0;
 
-#if (CHECK_HEAP)
-	size_t max_payload = 0;
-	size_t curr_payload = 0;
-#endif
+	uintptr_t heap_start = getbrk();
+	size_t	  max_payload = 0;
+	size_t	  curr_payload = 0;
 
 	clock_t clocks = 0;
 	double	execution_time;
@@ -115,34 +202,38 @@ int main(void) {
 			    m_rand(MAX_REQUEST_SIZE - 1) + 1;
 
 			clock_t start = clock();
-			void   *p = m_malloc(requested_size);
+			void   *p = mallocp(requested_size);
 			clocks += clock() - start;
 
-#if (CHECK_HEAP)
 			curr_payload += requested_size;
 			max_payload = curr_payload > max_payload ? curr_payload
 								 : max_payload;
-#endif
-
 			if (p == NULL) {
-				printf("m_malloc returned null\n");
+				printf("malloc returned null\n");
 				exit(EXIT_FAILURE);
 			}
 
 			initialize_job(&jobs[j], p, requested_size);
-			printf("allocated: ");
-			print_job(&jobs[j]);
+
+			if (config.verbose) {
+				printf("allocated: ");
+				print_job(&jobs[j]);
+			}
 
 			++malloc_count;
 		} else {
 			// free or realloc
-			printf("hash check: ");
-			print_job(&jobs[j]);
+			if (config.verbose) {
+				printf("hash check: ");
+				print_job(&jobs[j]);
+			}
 			if (!check_hash(&jobs[j])) {
 				printf("hash check failed");
 				exit(EXIT_FAILURE);
 			};
-			printf("hash check successful!\n");
+			if (config.verbose) {
+				printf("hash check successful!\n");
+			}
 
 			if (m_rand(100) < REALLOC_CHANCE) {
 				// realloc
@@ -150,40 +241,42 @@ int main(void) {
 				    m_rand(MAX_REQUEST_SIZE - 1) + 1;
 
 				clock_t start = clock();
-				void *p = m_realloc(jobs[j].p, requested_size);
+				void   *p = reallocp(jobs[j].p, requested_size);
 				clocks += clock() - start;
 
-#if (CHECK_HEAP)
 				curr_payload -= jobs[j].size;
 				curr_payload += requested_size;
 				max_payload = curr_payload > max_payload
 						  ? curr_payload
 						  : max_payload;
-#endif
 
 				if (p == NULL) {
-					printf("m_realloc returned null\n");
+					printf("realloc returned null\n");
 					exit(EXIT_FAILURE);
 				}
 
 				initialize_job(&jobs[j], p, requested_size);
-				printf("reallocated: ");
-				print_job(&jobs[j]);
+
+				if (config.verbose) {
+					printf("reallocated: ");
+					print_job(&jobs[j]);
+				}
 
 				++malloc_count;
 				++free_count;
 			} else {
 				// free
 				clock_t start = clock();
-				m_free(jobs[j].p);
+				freep(jobs[j].p);
 				clocks += clock() - start;
 
-#if (CHECK_HEAP)
 				curr_payload -= jobs[j].size;
-#endif
 
-				printf("freed: ");
-				print_job(&jobs[j]);
+				if (config.verbose) {
+					printf("freed: ");
+					print_job(&jobs[j]);
+				}
+
 				clear_job(&jobs[j]);
 
 				++free_count;
@@ -191,7 +284,9 @@ int main(void) {
 		}
 	}
 
+	/* print statistics */
 	execution_time = (double)clocks / CLOCKS_PER_SEC;
+	size_t heap_size = getbrk() - heap_start;
 
 	printf(
 	    "calls to malloc: %d\ncalls to free: %d\nexecution time (seconds): %f\n",
@@ -199,9 +294,7 @@ int main(void) {
 	printf("secs/call: %f, calls/sec: %f\n",
 	       execution_time / (malloc_count + free_count),
 	       (malloc_count + free_count) / execution_time);
-#if (CHECK_HEAP)
 	printf("total heap size: %zu\n", heap_size);
 	printf("peak utilization: %f%%\n",
-	       (double)max_payload / heap_size * 100);
-#endif
+	       !heap_size ? 100 : (double)max_payload / heap_size * 100);
 }
