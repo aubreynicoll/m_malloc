@@ -142,18 +142,15 @@ void *m_malloc(size_t size) {
 	print_debug_info("called m_malloc! ");
 	print_debug_info("requested size: %zu, ", size);
 
-	void *payload = internal_malloc(size);
-	return payload;
+	return internal_malloc(size);
 }
 
 void *m_calloc(size_t nmemb, size_t size) {
-	void *payload = internal_calloc(nmemb, size);
-	return payload;
+	return internal_calloc(nmemb, size);
 }
 
 void *m_realloc(void *ptr, size_t size) {
-	void *payload = internal_realloc(ptr, size);
-	return payload;
+	return internal_realloc(ptr, size);
 }
 
 void m_free(void *ptr) {
@@ -232,8 +229,8 @@ static void *internal_malloc(size_t size) {
 	}
 
 	if (!initialized) {
-		head.nextp = &head;
 		initialized = 1;
+		head.nextp = &head;
 	}
 
 	size = GET_ALIGNED_SIZE(size);
@@ -245,6 +242,7 @@ static void *internal_malloc(size_t size) {
 			// get more memory
 			Header *new_block = extend_heap(size + ALIGNMENT);
 			if (new_block == NULL) {
+				errno = ENOMEM;
 				return NULL;
 			}
 
@@ -274,9 +272,7 @@ static void *internal_malloc(size_t size) {
 			print_debug_info("allocated %p\n", curr_block);
 			print_free_list();
 
-			void *payload_ptr = get_payload_ptr(curr_block);
-
-			return payload_ptr;
+			return get_payload_ptr(curr_block);
 		}
 	}
 }
@@ -284,6 +280,7 @@ static void *internal_malloc(size_t size) {
 static void *internal_calloc(size_t nmemb, size_t size) {
 	size_t total_size = nmemb * size;
 	if (nmemb && total_size / nmemb != size) {
+		errno = EOVERFLOW;
 		return NULL;
 	}
 
