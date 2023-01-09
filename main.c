@@ -9,8 +9,8 @@
 
 #include "m_malloc.h"
 
-#define BUFSIZE 10
-#define MAX_REQUEST_SIZE 64000
+#define BUFSIZE 100
+#define MAX_REQUEST_SIZE 128000
 #define MAX_REQUESTS 10000
 #define REALLOC_CHANCE 10
 
