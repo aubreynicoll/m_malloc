@@ -1,7 +1,7 @@
 P := main
 OBJECTS := $(P).o m_malloc.o
 CC := gcc
-CFLAGS := -I$(HOME)/local/include -Wall -Wextra
+CFLAGS := -I$(HOME)/local/include -Wall -Wextra -Werror
 LDFLAGS := -L$(HOME)/local/lib
 LDLIBS :=
 
@@ -13,7 +13,7 @@ endif
 
 
 ifeq ($(BUILD_PROFILE), release)
-	CFLAGS := $(CFLAGS) -Werror -O3
+	CFLAGS := $(CFLAGS)  -O3
 else
 	CFLAGS := $(CFLAGS) -g -Og -DCHECK_HEAP=1 -DPRINT_DEBUG_INFO=1
 	LDFLAGS := $(LDFLAGS)

@@ -18,12 +18,6 @@
  * - not thread-safe
  */
 
-#ifndef __gnu_linux__
-#error "I refuse to compile for anything other than gnu/linux"
-#endif
-
-#define _GNU_SOURCE
-
 #include "m_malloc.h"
 
 #include <libc.h>
